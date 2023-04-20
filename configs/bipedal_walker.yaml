@@ -7,7 +7,7 @@ model:
   fixed_std: true
 
 task:
-  name: rl_demo
+  name: bipedal_walker
   finished:
     max_steps: 1_000_000
   dataloader:

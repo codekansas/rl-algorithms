@@ -10,11 +10,11 @@ from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
 from project.models.a2c import A2CModel
-from project.tasks.rl_demo_env import BipedalWalkerEnvironment, BWAction, BWState
+from project.tasks.environments.bipedal_walker import Action, Environment, State
 
 
 @dataclass
-class RLDemoTaskConfig(ml.ReinforcementLearningTaskConfig):
+class BipedalWalkerTaskConfig(ml.ReinforcementLearningTaskConfig):
     hardcore: bool = ml.conf_field(False, help="If set, use the hardcore environment")
     gamma: float = ml.conf_field(0.99, help="The discount factor")
     gae_lmda: float = ml.conf_field(0.9, help="The GAE factor (higher means more variance, lower means more bias)")
@@ -29,32 +29,32 @@ Output = tuple[Tensor, Normal]
 Loss = dict[str, Tensor]
 
 
-@ml.register_task("rl_demo", RLDemoTaskConfig)
-class RLDemoTask(
+@ml.register_task("bipedal_walker", BipedalWalkerTaskConfig)
+class BipedalWalkerTask(
     ml.ReinforcementLearningTask[
-        RLDemoTaskConfig,
+        BipedalWalkerTaskConfig,
         A2CModel,
-        BWState,
-        BWAction,
+        State,
+        Action,
         Output,
         Loss,
     ],
 ):
-    def __init__(self, config: RLDemoTaskConfig):
+    def __init__(self, config: BipedalWalkerTaskConfig):
         super().__init__(config)
 
-    def get_actions(self, model: A2CModel, states: list[BWState], optimal: bool) -> list[BWAction]:
+    def get_actions(self, model: A2CModel, states: list[State], optimal: bool) -> list[Action]:
         collated_states = self._device.recursive_apply(self.collate_fn(states))
         value = model.forward_value_net(collated_states.observation).cpu()
         p_dist = model.forward_policy_net(collated_states.observation)
         action = p_dist.mode if optimal else p_dist.sample()
         log_prob, action = p_dist.log_prob(action).cpu(), action.cpu()
-        return [BWAction.from_policy(c, p, v) for c, p, v in zip(action.unbind(0), log_prob.unbind(0), value.unbind(0))]
+        return [Action.from_policy(c, p, v) for c, p, v in zip(action.unbind(0), log_prob.unbind(0), value.unbind(0))]
 
-    def get_environment(self) -> BipedalWalkerEnvironment:
-        return BipedalWalkerEnvironment(hardcore=self.config.hardcore)
+    def get_environment(self) -> Environment:
+        return Environment(hardcore=self.config.hardcore)
 
-    def postprocess_trajectory(self, samples: list[tuple[BWState, BWAction]]) -> list[tuple[BWState, BWAction]]:
+    def postprocess_trajectory(self, samples: list[tuple[State, Action]]) -> list[tuple[State, Action]]:
         def discount_cumsum(x: np.ndarray, discount: float) -> np.ndarray:
             return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
@@ -86,14 +86,14 @@ class RLDemoTask(
 
     def postprocess_trajectories(
         self,
-        trajectories: list[list[tuple[BWState, BWAction]]],
-    ) -> list[list[tuple[BWState, BWAction]]]:
+        trajectories: list[list[tuple[State, Action]]],
+    ) -> list[list[tuple[State, Action]]]:
         reward_arr = np.array([cast(float, s.reward) for t in trajectories for s, _ in t])
         self.logger.log_scalar("reward_mean", reward_arr.mean())
         self.logger.log_scalar("reward_std", reward_arr.std())
         return trajectories
 
-    def run_model(self, model: A2CModel, batch: tuple[BWState, BWAction], state: ml.State) -> Output:
+    def run_model(self, model: A2CModel, batch: tuple[State, Action], state: ml.State) -> Output:
         states, _ = batch
         obs = states.observation
         value = model.forward_value_net(obs)
@@ -103,7 +103,7 @@ class RLDemoTask(
     def compute_loss(
         self,
         model: A2CModel,
-        batch: tuple[BWState, BWAction],
+        batch: tuple[State, Action],
         state: ml.State,
         output: Output,
     ) -> Loss:
@@ -143,12 +143,12 @@ def run_adhoc_test() -> None:
     """Runs adhoc tests for this task.
 
     Usage:
-        python -m project.tasks.rl_demo
+        python -m project.tasks.bipedal_walker
     """
 
     ml.configure_logging(use_tqdm=True)
-    config = RLDemoTaskConfig()
-    task = RLDemoTask(config)
+    config = BipedalWalkerTaskConfig()
+    task = BipedalWalkerTask(config)
     task.sample_clip(save_path="out/bipedal_walker.mp4", writer="opencv")
 
 
