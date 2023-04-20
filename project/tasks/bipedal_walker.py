@@ -9,7 +9,7 @@ from torch import Tensor
 from torch.distributions.normal import Normal
 from torch.nn import functional as F
 
-from project.models.a2c import A2CModel
+from project.models.a2c_continuous import A2CContinuousModel
 from project.tasks.environments.bipedal_walker import Action, Environment, State
 
 
@@ -25,25 +25,17 @@ class BipedalWalkerTaskConfig(ml.ReinforcementLearningTaskConfig):
     normalize_advantages: bool = ml.conf_field(False, help="If set, normalize advantages")
 
 
+Model = A2CContinuousModel
 Output = tuple[Tensor, Normal]
 Loss = dict[str, Tensor]
 
 
 @ml.register_task("bipedal_walker", BipedalWalkerTaskConfig)
-class BipedalWalkerTask(
-    ml.ReinforcementLearningTask[
-        BipedalWalkerTaskConfig,
-        A2CModel,
-        State,
-        Action,
-        Output,
-        Loss,
-    ],
-):
+class BipedalWalkerTask(ml.ReinforcementLearningTask[BipedalWalkerTaskConfig, Model, State, Action, Output, Loss]):
     def __init__(self, config: BipedalWalkerTaskConfig):
         super().__init__(config)
 
-    def get_actions(self, model: A2CModel, states: list[State], optimal: bool) -> list[Action]:
+    def get_actions(self, model: Model, states: list[State], optimal: bool) -> list[Action]:
         collated_states = self._device.recursive_apply(self.collate_fn(states))
         value = model.forward_value_net(collated_states.observation).cpu()
         p_dist = model.forward_policy_net(collated_states.observation)
@@ -93,20 +85,14 @@ class BipedalWalkerTask(
         self.logger.log_scalar("reward_std", reward_arr.std())
         return trajectories
 
-    def run_model(self, model: A2CModel, batch: tuple[State, Action], state: ml.State) -> Output:
+    def run_model(self, model: Model, batch: tuple[State, Action], state: ml.State) -> Output:
         states, _ = batch
         obs = states.observation
         value = model.forward_value_net(obs)
         p_dist = model.forward_policy_net(obs)
         return value, p_dist
 
-    def compute_loss(
-        self,
-        model: A2CModel,
-        batch: tuple[State, Action],
-        state: ml.State,
-        output: Output,
-    ) -> Loss:
+    def compute_loss(self, model: Model, batch: tuple[State, Action], state: ml.State, output: Output) -> Loss:
         _, actions = batch
         value, p_dist = output
 

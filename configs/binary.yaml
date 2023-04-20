@@ -1,10 +1,9 @@
 model:
-  name: a2c
+  name: a2c_discrete
   state_dims: 24
   hidden_dims: 32
   num_layers: 2
   action_dims: 4
-  fixed_std: true
 
 task:
   name: binary
